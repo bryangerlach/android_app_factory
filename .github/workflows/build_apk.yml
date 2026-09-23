@@ -169,13 +169,31 @@ jobs:
           curl -L "${{ inputs.ICON_ZIP_URL }}" -o icons.zip
           unzip -q icons.zip -d $ICON_PATH
           
-          # Verify the icon exists in the expected spot
           if [ ! -f "$ICON_PATH/icon.png" ]; then
             echo "Error: icon.png not found inside the downloaded ZIP root."
             exit 1
           fi
+
+          python3 - <<'EOF'
+          with open("pubspec.yaml", "r") as f:
+              lines = f.readlines()
           
-          # Explicitly create/overwrite flutter_launcher_icons.yaml so it points to the downloaded icon
+          new_lines = []
+          skip = False
+          for line in lines:
+              if line.strip().startswith("flutter_launcher_icons:"):
+                  skip = True
+                  continue
+              if skip:
+                  if line.strip() and not line.startswith(" ") and not line.startswith("\t"):
+                      skip = False
+              if not skip:
+                  new_lines.append(line)
+                  
+          with open("pubspec.yaml", "w") as f:
+              f.writelines(new_lines)
+          EOF
+
           cat << 'EOF' > flutter_launcher_icons.yaml
           flutter_launcher_icons:
             image_path: "assets/dynamic_icon/icon.png"
@@ -185,8 +203,7 @@ jobs:
           EOF
 
           echo "Generating launcher icons..."
-          # Use the non-deprecated command syntax
-          flutter pub run flutter_launcher_icons
+          flutter pub run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
       - name: Set Version (Semantic + Build Number)
         id: version
