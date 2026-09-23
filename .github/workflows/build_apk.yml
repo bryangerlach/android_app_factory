@@ -58,7 +58,7 @@ jobs:
           flutter pub global activate flutter_launcher_icons
 
       # -------------------------------------------------
-      # ⚙️ WHITE-LABELING / TEMPLATING MAGIC STARTS HERE
+      # ⚙️ WHITE-LABELING / TEMPLATING MAGIC
       # -------------------------------------------------
 
       - name: Inject App Name and Description
@@ -69,6 +69,7 @@ jobs:
           python3 -c '
           import os
           app_name = os.environ["APP_NAME"]
+          web_url = os.environ["WEB_URL"]
           
           # Update pubspec.yaml
           with open("pubspec.yaml", "r") as f:
@@ -109,7 +110,75 @@ jobs:
               f.write(content)
           EOF
 
+      - name: Whitelabel App Title, Manifest Label, and Kotlin Package
+        env:
+          APP_NAME: ${{ inputs.APP_NAME }}
+          APP_ID: ${{ inputs.APP_ID }}
+        run: |
+          python3 - <<'EOF'
+          import os, re, glob, shutil
+
+          app_name = os.environ["APP_NAME"]
+          app_id = os.environ["APP_ID"]
+
+          # 1. Update Title in lib/main.dart
+          if os.path.exists("lib/main.dart"):
+              with open("lib/main.dart", "r") as f:
+                  content = f.read()
+              content = re.sub(r"title:\s*['\"].*?['\"]", f"title: '{app_name}'", content)
+              with open("lib/main.dart", "w") as f:
+                  f.write(content)
+
+          # 2. Update AndroidManifest.xml app label
+          manifest_path = "android/app/src/main/AndroidManifest.xml"
+          if os.path.exists(manifest_path):
+              with open(manifest_path, "r") as f:
+                  content = f.read()
+              content = re.sub(r'android:label="[^"]+"', f'android:label="{app_name}"', content)
+              with open(manifest_path, "w") as f:
+                  f.write(content)
+
+          # 3. Update package declaration in MainActivity.kt / .java and move folder structure
+          main_files = glob.glob("android/app/src/main/kotlin/**/MainActivity.*", recursive=True)
+          if not main_files:
+              main_files = glob.glob("android/app/src/main/java/**/MainActivity.*", recursive=True)
+
+          if main_files:
+              main_file = main_files[0]
+              with open(main_file, "r") as f:
+                  content = f.read()
+              
+              content = re.sub(r"package\s+[\w\.]+", f"package {app_id}", content)
+              with open(main_file, "w") as f:
+                  f.write(content)
+
+              new_dir_parts = app_id.split('.')
+              base_dir = "android/app/src/main/kotlin" if "kotlin" in main_file else "android/app/src/main/java"
+              target_dir = os.path.join(base_dir, *new_dir_parts)
+              os.makedirs(target_dir, exist_ok=True)
+              
+              target_file = os.path.join(target_dir, os.path.basename(main_file))
+              if os.path.abspath(main_file) != os.path.abspath(target_file):
+                  shutil.move(main_file, target_file)
+          EOF
+
+      - name: Download and Process Dynamic Icon
+        run: |
+          mkdir -p $ICON_PATH
+          echo "Downloading icons from ${{ inputs.ICON_ZIP_URL }}..."
+          curl -L "${{ inputs.ICON_ZIP_URL }}" -o icons.zip
+          unzip -q icons.zip -d $ICON_PATH
+          
+          if [ ! -f "$ICON_PATH/icon.png" ]; then
+            echo "Error: icon.png not found inside the downloaded ZIP root."
+            exit 1
+          fi
+          
+          # Run flutter_launcher_icons to generate native app icons
+          flutter pub global run flutter_launcher_icons:main
+
       - name: Set Version (Semantic + Build Number)
+        id: version
         run: |
           MAJOR_MINOR="${{ inputs.BASE_VERSION }}"
           PATCH="${{ github.run_number }}"
@@ -118,6 +187,9 @@ jobs:
           
           # Update pubspec
           sed -i "s/^version:.*/version: $FULL_VERSION/" pubspec.yaml
+          
+          # Pass version info to the release job step outputs
+          echo "version-number=$FULL_VERSION" >> $GITHUB_OUTPUT
 
       # -------------------------------------------------
       # 🚀 BUILD AND RELEASE
@@ -132,7 +204,6 @@ jobs:
       - name: Determine Output Filename
         id: filename
         run: |
-          # Create a clean filename based on app name and version
           CLEAN_NAME=$(echo "${{ inputs.APP_NAME }}" | tr -cd '[:alnum:]_')
           echo "APK_NAME=${CLEAN_NAME}_v${{ steps.version.outputs.version-number }}" >> $GITHUB_OUTPUT
 
@@ -155,7 +226,6 @@ jobs:
           name: ${{ inputs.APP_NAME }} - ${{ steps.version.outputs.version-number }}
           body: |
             Auto-generated build for ${{ inputs.APP_NAME }}
-            Source URL: ${{ inputs.WEB_URL }}
           files: |
             build/app/outputs/flutter-apk/app-*-release.apk
             build/app/outputs/bundle/release/app-release.aab
