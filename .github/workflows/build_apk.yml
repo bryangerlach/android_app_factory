@@ -1,0 +1,159 @@
+name: 🏭 Generic Android App Factory
+
+on:
+  # Enable manual triggering from the GitHub UI
+  workflow_dispatch:
+    inputs:
+      APP_NAME:
+        description: 'Display Name of the App (e.g., My Movie App)'
+        required: true
+        type: string
+      APP_ID:
+        description: 'Android Package ID (e.g., com.COMPANY.project)'
+        required: true
+        type: string
+      ICON_ZIP_URL:
+        description: 'URL to a ZIP file containing a single high-res icon (icon.png)'
+        required: true
+        type: string
+      WEB_URL:
+        description: 'The URL the app should load'
+        required: true
+        type: string
+      BASE_VERSION:
+        description: 'Base Version (e.g., 1.0)'
+        required: true
+        default: '1.0'
+        type: string
+
+env:
+  # This is where the dynamic icon will be unzipped to
+  ICON_PATH: 'assets/dynamic_icon'
+
+jobs:
+  build-whitelabeled-app:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for GitHub Releases
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          flutter pub global activate flutter_launcher_icons
+
+      # -------------------------------------------------
+      # ⚙️ WHITE-LABELING / TEMPLATING MAGIC STARTS HERE
+      # -------------------------------------------------
+
+      - name: 1. Inject App Name and Description
+        run: |
+          # Escape variables just in case they contain spaces or special chars
+          SAFE_NAME=$(printf '%s' "${{ inputs.APP_NAME }}" | sed 's/[&/]/\\&/g')
+          
+          # Update pubspec.yaml (Changes the name seen by the OS)
+          sed -i "s/^name:.*/name: $SAFE_NAME/" pubspec.yaml
+          sed -i "s/^description:.*/description: Wrapper for ${{ inputs.WEB_URL }}/" pubspec.yaml
+
+          # OPTIONAL: If you have a native Android strings.xml for app name, update that too:
+          # sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">'$SAFE_NAME'<\/string>/' android/app/src/main/res/values/strings.xml
+
+      - name: 2. Inject Android Application ID (Package Name)
+        run: |
+          echo "Setting Application ID to: ${{ inputs.APP_ID }}"
+          # Replace applicationId in build.gradle
+          sed -i 's/applicationId ".*"/applicationId "${{ inputs.APP_ID }}"/' android/app/build.gradle
+
+      - name: 3. Download and Process Dynamic Icon
+        run: |
+          mkdir -p $ICON_PATH
+          echo "Downloading icons from ${{ inputs.ICON_ZIP_URL }}..."
+          
+          # Download the zip file securely
+          curl -L "${{ inputs.ICON_ZIP_URL }}" -o icons.zip
+          
+          # Unzip quietly into the target directory
+          unzip -q icons.zip -d $ICON_PATH
+          
+          # Verify icon exists
+          if [ ! -f "$ICON_PATH/icon.png" ]; then
+            echo "Error: icon.png not found inside the downloaded ZIP."
+            exit 1
+          fi
+          
+          # Run flutter_launcher_icons to generate native Android/iOS icons
+          flutter pub global run flutter_launcher_icons:main
+
+      - name: 4. Inject Web URL into Dart Code
+        run: |
+          # Assuming you have a Dart constant file, e.g., lib/constants.dart
+          # content: const String webUrl = "PLACEHOLDER";
+          sed -i 's|const String webUrl = ".*";|const String webUrl = "${{ inputs.WEB_URL }}";|' lib/constants.dart
+
+      - name: 5. Set Version (Semantic + Build Number)
+        run: |
+          MAJOR_MINOR="${{ inputs.BASE_VERSION }}"
+          PATCH="${{ github.run_number }}"
+          FULL_VERSION="${MAJOR_MINOR}.${PATCH}"
+          echo "Setting Version to: $FULL_VERSION"
+          
+          # Update pubspec
+          sed -i "s/^version:.*/version: $FULL_VERSION/" pubspec.yaml
+
+      # -------------------------------------------------
+      # 🚀 BUILD AND RELEASE
+      # -------------------------------------------------
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+
+      - name: Determine Output Filename
+        id: filename
+        run: |
+          # Create a clean filename based on app name and version
+          CLEAN_NAME=$(echo "${{ inputs.APP_NAME }}" | tr -cd '[:alnum:]_')
+          echo "APK_NAME=${CLEAN_NAME}_v${{ steps.version.outputs.version-number }}" >> $GITHUB_OUTPUT
+
+      - name: Archive APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.filename.outputs.APK_NAME }}-apk
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+
+      - name: Archive AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.filename.outputs.APK_NAME }}-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version-number }}_${{ steps.filename.outputs.APK_NAME }}
+          name: ${{ inputs.APP_NAME }} - ${{ steps.version.outputs.version-number }}
+          body: |
+            Auto-generated build for ${{ inputs.APP_NAME }}
+            Source URL: ${{ inputs.WEB_URL }}
+          files: |
+            build/app/outputs/flutter-apk/app-*-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
