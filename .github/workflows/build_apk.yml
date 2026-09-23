@@ -62,48 +62,68 @@ jobs:
       # -------------------------------------------------
 
       - name: 1. Inject App Name and Description
+        env:
+          APP_NAME: ${{ inputs.APP_NAME }}
+          WEB_URL: ${{ inputs.WEB_URL }}
         run: |
-          # Escape variables just in case they contain spaces or special chars
-          SAFE_NAME=$(printf '%s' "${{ inputs.APP_NAME }}" | sed 's/[&/]/\\&/g')
+          python3 -c '
+          import os
+          app_name = os.environ["APP_NAME"]
+          web_url = os.environ["WEB_URL"]
           
-          # Update pubspec.yaml (Changes the name seen by the OS)
-          sed -i "s/^name:.*/name: $SAFE_NAME/" pubspec.yaml
-          sed -i "s/^description:.*/description: Wrapper for ${{ inputs.WEB_URL }}/" pubspec.yaml
-
-          # OPTIONAL: If you have a native Android strings.xml for app name, update that too:
-          # sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">'$SAFE_NAME'<\/string>/' android/app/src/main/res/values/strings.xml
+          # Update pubspec.yaml
+          with open("pubspec.yaml", "r") as f:
+              content = f.read()
+          
+          # Replace name and description safely
+          lines = []
+          for line in content.splitlines():
+              if line.startswith("name:"):
+                  lines.append(f"name: {app_name}")
+              elif line.startswith("description:"):
+                  lines.append(f"description: Wrapper for {web_url}")
+              else:
+                  lines.append(line)
+                  
+          with open("pubspec.yaml", "w") as f:
+              f.write("\n".join(lines) + "\n")
+          '
 
       - name: 2. Inject Android Application ID (Package Name)
+        env:
+          APP_ID: ${{ inputs.APP_ID }}
         run: |
-          echo "Setting Application ID to: ${{ inputs.APP_ID }}"
-          # Replace applicationId in build.gradle
-          sed -i 's/applicationId ".*"/applicationId "${{ inputs.APP_ID }}"/' android/app/build.gradle
-
-      - name: 3. Download and Process Dynamic Icon
-        run: |
-          mkdir -p $ICON_PATH
-          echo "Downloading icons from ${{ inputs.ICON_ZIP_URL }}..."
+          python3 -c '
+          import os, re
+          app_id = os.environ["APP_ID"]
           
-          # Download the zip file securely
-          curl -L "${{ inputs.ICON_ZIP_URL }}" -o icons.zip
+          with open("android/app/build.gradle", "r") as f:
+              content = f.read()
+              
+          # Replace applicationId "..."
+          new_content = re.sub(r"applicationId\s+\"[^\"]+\"", f"applicationId \"{app_id}\"", content)
           
-          # Unzip quietly into the target directory
-          unzip -q icons.zip -d $ICON_PATH
-          
-          # Verify icon exists
-          if [ ! -f "$ICON_PATH/icon.png" ]; then
-            echo "Error: icon.png not found inside the downloaded ZIP."
-            exit 1
-          fi
-          
-          # Run flutter_launcher_icons to generate native Android/iOS icons
-          flutter pub global run flutter_launcher_icons:main
+          with open("android/app/build.gradle", "w") as f:
+              f.write(new_content)
+          '
 
       - name: 4. Inject Web URL into Dart Code
+        env:
+          WEB_URL: ${{ inputs.WEB_URL }}
         run: |
-          # Assuming you have a Dart constant file, e.g., lib/constants.dart
-          # content: const String webUrl = "PLACEHOLDER";
-          sed -i 's|const String webUrl = ".*";|const String webUrl = "${{ inputs.WEB_URL }}";|' lib/constants.dart
+          python3 -c '
+          import os, re
+          web_url = os.environ["WEB_URL"]
+          
+          with open("lib/constants.dart", "r") as f:
+              content = f.read()
+              
+          # Replace webUrl constant safely
+          new_content = re.sub(r"const\s+String\s+webUrl\s*=\s*\".*?\";", f"const String webUrl = \"{web_url}\";", content)
+          
+          with open("lib/constants.dart", "w") as f:
+              f.write(new_content)
+          '
 
       - name: 5. Set Version (Semantic + Build Number)
         run: |
