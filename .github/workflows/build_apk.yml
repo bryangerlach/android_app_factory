@@ -106,24 +106,6 @@ jobs:
               f.write(new_content)
           '
 
-      - name: 4. Inject Web URL into Dart Code
-        env:
-          WEB_URL: ${{ inputs.WEB_URL }}
-        run: |
-          python3 -c '
-          import os, re
-          web_url = os.environ["WEB_URL"]
-          
-          with open("lib/constants.dart", "r") as f:
-              content = f.read()
-              
-          # Replace webUrl constant safely
-          new_content = re.sub(r"const\s+String\s+webUrl\s*=\s*\".*?\";", f"const String webUrl = \"{web_url}\";", content)
-          
-          with open("lib/constants.dart", "w") as f:
-              f.write(new_content)
-          '
-
       - name: 5. Set Version (Semantic + Build Number)
         run: |
           MAJOR_MINOR="${{ inputs.BASE_VERSION }}"
