@@ -196,7 +196,7 @@ jobs:
               f.writelines(new_lines)
           EOF
 
-          # 2. Write the dynamic configuration file
+          # 2. Write the dynamic configuration file pointing to your downloaded icon
           cat << 'EOF' > flutter_launcher_icons.yaml
           flutter_launcher_icons:
             image_path: "assets/dynamic_icon/icon.png"
@@ -206,9 +206,9 @@ jobs:
           EOF
 
           echo "Generating launcher icons..."
-          # 3. Activate globally and run via the global binary directly
-          dart pub global activate flutter_launcher_icons
-          flutter-launcher-icons -f flutter_launcher_icons.yaml
+          # 3. Use standard dart run with the explicit config flag
+          flutter pub get
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
       - name: Set Version (Semantic + Build Number)
         id: version
