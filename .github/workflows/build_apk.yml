@@ -169,13 +169,24 @@ jobs:
           curl -L "${{ inputs.ICON_ZIP_URL }}" -o icons.zip
           unzip -q icons.zip -d $ICON_PATH
           
+          # Verify the icon exists in the expected spot
           if [ ! -f "$ICON_PATH/icon.png" ]; then
             echo "Error: icon.png not found inside the downloaded ZIP root."
             exit 1
           fi
           
-          # Run flutter_launcher_icons to generate native app icons
-          flutter pub global run flutter_launcher_icons:main
+          # Explicitly create/overwrite flutter_launcher_icons.yaml so it points to the downloaded icon
+          cat << 'EOF' > flutter_launcher_icons.yaml
+          flutter_launcher_icons:
+            image_path: "assets/dynamic_icon/icon.png"
+            android: true
+            ios: true
+            min_sdk_android: 21
+          EOF
+
+          echo "Generating launcher icons..."
+          # Use the non-deprecated command syntax
+          flutter pub run flutter_launcher_icons
 
       - name: Set Version (Semantic + Build Number)
         id: version
