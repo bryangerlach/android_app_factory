@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.crayoneater.episodes_android"
+    namespace = "com.example.generic_wrapper"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -25,7 +25,7 @@ android {
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
         // flag during build.
-        versionCode = flutterVersionCode
+        versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 

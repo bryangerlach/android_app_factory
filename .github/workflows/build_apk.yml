@@ -61,7 +61,7 @@ jobs:
       # ⚙️ WHITE-LABELING / TEMPLATING MAGIC STARTS HERE
       # -------------------------------------------------
 
-      - name: 1. Inject App Name and Description
+      - name: Inject App Name and Description
         env:
           APP_NAME: ${{ inputs.APP_NAME }}
           WEB_URL: ${{ inputs.WEB_URL }}
@@ -69,7 +69,6 @@ jobs:
           python3 -c '
           import os
           app_name = os.environ["APP_NAME"]
-          web_url = os.environ["WEB_URL"]
           
           # Update pubspec.yaml
           with open("pubspec.yaml", "r") as f:
@@ -81,7 +80,7 @@ jobs:
               if line.startswith("name:"):
                   lines.append(f"name: {app_name}")
               elif line.startswith("description:"):
-                  lines.append(f"description: Wrapper for {web_url}")
+                  lines.append(f"description: Wrapper for {app_name}")
               else:
                   lines.append(line)
                   
@@ -89,7 +88,7 @@ jobs:
               f.write("\n".join(lines) + "\n")
           '
 
-      - name: 2. Inject Android Application ID (Package Name)
+      - name: Inject Android Application ID and Namespace
         env:
           APP_ID: ${{ inputs.APP_ID }}
         run: |
@@ -100,13 +99,18 @@ jobs:
           with open("android/app/build.gradle.kts", "r") as f:
               content = f.read()
               
-          new_content = re.sub(r"applicationId\s*=\s*\"[^\"]+\"", f"applicationId = \"{app_id}\"", content)
+          # 1. Replace namespace = "..." (or namespace "...")
+          content = re.sub(r"namespace\s*=\s*\"[^\"]+\"", f"namespace = \"{app_id}\"", content)
+          
+          # 2. Replace applicationId = "..." in defaultConfig
+          content = re.sub(r"applicationId\s*=\s*\"[^\"]+\"", f"applicationId = \"{app_id}\"", content)
           
           with open("android/app/build.gradle.kts", "w") as f:
-              f.write(new_content)
+              f.write(content)
+          '
           '
 
-      - name: 5. Set Version (Semantic + Build Number)
+      - name: Set Version (Semantic + Build Number)
         run: |
           MAJOR_MINOR="${{ inputs.BASE_VERSION }}"
           PATCH="${{ github.run_number }}"
