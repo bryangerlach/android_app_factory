@@ -68,19 +68,22 @@ jobs:
           WEB_URL: ${{ inputs.WEB_URL }}
         run: |
           python3 -c '
-          import os
+          import os, re
           app_name = os.environ["APP_NAME"]
           web_url = os.environ["WEB_URL"]
+          
+          # Create a valid Dart package name (lowercase, snake_case)
+          package_name = re.sub(r"[^a-z0-9_]", "_", app_name.lower())
+          package_name = re.sub(r"_+", "_", package_name).strip("_")
           
           # Update pubspec.yaml
           with open("pubspec.yaml", "r") as f:
               content = f.read()
           
-          # Replace name and description safely
           lines = []
           for line in content.splitlines():
               if line.startswith("name:"):
-                  lines.append(f"name: {app_name}")
+                  lines.append(f"name: {package_name}")
               elif line.startswith("description:"):
                   lines.append(f"description: Wrapper for {app_name}")
               else:
