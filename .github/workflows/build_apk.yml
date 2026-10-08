@@ -198,14 +198,29 @@ jobs:
           echo "version-number=$FULL_VERSION" >> $GITHUB_OUTPUT
 
       # -------------------------------------------------
+      # 🔐 DECODE KEYSTORE
+      # -------------------------------------------------
+      - name: Decode Release Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release-key.jks
+
+      # -------------------------------------------------
       # 🚀 BUILD AND RELEASE
       # -------------------------------------------------
 
       - name: Build APK
         run: flutter build apk --release --split-per-abi
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
 
       - name: Build App Bundle
         run: flutter build appbundle --release
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
 
       - name: Determine Output Filename
         id: filename

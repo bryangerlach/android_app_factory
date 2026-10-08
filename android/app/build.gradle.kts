@@ -29,6 +29,18 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+    create("release") {
+        if (System.getenv("KEYSTORE_BASE64") != null) {
+            storeFile = file("release-key.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            // Use the keystore password for the key password as well
+            keyPassword = System.getenv("KEYSTORE_PASSWORD")
+        }
+    }
+}
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
